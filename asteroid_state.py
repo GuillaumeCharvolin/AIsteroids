@@ -49,5 +49,5 @@ class AsteroidState:
 
     def __str__(self):
         res = f"SHIP: ({self.ship_x:3}, {self.ship_y:3}) | ROCKS: {len(self.asteroids):2} | SCORE: {self.score}\n"
-        rock_list = " ".join([f"[{r['dx']},{r['dy']}]" for r in self.asteroids])
+        rock_list = " ".join([f"[{r['dx']:3},{r['dy']:3}]" for r in self.asteroids])
         return res + f"SENSORS: {rock_list}"

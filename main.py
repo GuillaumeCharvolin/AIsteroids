@@ -14,7 +14,7 @@ def get_action():
         action = random.randint(1,4)
     return action
 
-env = gym.make("ALE/Asteroids-v5", obs_type="ram", render_mode="human")
+env = gym.make("ALE/Asteroids-v5", obs_type="ram", render_mode="human", difficulty=3, mode=31)
 obs, info = env.reset()
 
 state = AsteroidState()
