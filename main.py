@@ -9,7 +9,10 @@ gym.register_envs(ale_py)
 os.environ['SDL_AUDIODRIVER'] = 'dummy' # To kill the sound
 
 def get_action():
-    return random.randint(1, 4)
+    action = random.randint(1, 4)
+    if (action != 1):
+        action = random.randint(1,4)
+    return action
 
 env = gym.make("ALE/Asteroids-v5", obs_type="ram", render_mode="human")
 obs, info = env.reset()
