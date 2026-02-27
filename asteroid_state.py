@@ -1,13 +1,6 @@
 import math
 import numpy as np
-
-# RAM layout (from OCAtari reverse-engineering):
-#   Asteroid Y raw:  ram[3]  .. ram[19]   (17 slots)
-#   Asteroid X raw:  ram[21] .. ram[37]   (Y index + 18)
-#   Asteroid size:   ram[39] .. ram[55]   (Y index + 36)
-#   Ship X raw:      ram[73]
-#   Ship Y raw:      ram[74]   (224 = dead)
-#   Ship rotation:   ram[60]   (lower 4 bits = direction)
+from settings import *
 
 def _x_position(value):
     """Decode the non-linear X position encoding used by Atari 2600 Asteroids.
@@ -33,34 +26,27 @@ def _y_position(raw_y):
 
 
 class AsteroidState:
-    # Asteroid slot indices (Y positions at ram[3..19])
-    AST_SLOTS = list(range(3, 20))  # 17 slots
-    NUM_SLOTS = len(AST_SLOTS)
+    AST_SLOTS = list(range(AST_Y_START, AST_Y_END))
 
     def __init__(self):
-        self.WIDTH = 160
-        self.HEIGHT = 210
-        
         self.ship_x = 0
         self.ship_y = 0
         self.ship_rot = 0
         self.asteroids = []
-        self.lives = 4
+        self.lives = STARTING_LIVES
         self.is_dead = False
         self.custom_reward = 0
 
     def _get_polar_coords(self, obj_x, obj_y):
-        # Calculate relative distance with screen wrap-around logic
-        dx = math.remainder(int(obj_x) - int(self.ship_x), self.WIDTH)
-        dy = math.remainder(int(obj_y) - int(self.ship_y), self.HEIGHT)
+        dx = math.remainder(int(obj_x) - int(self.ship_x), SCREEN_WIDTH)
+        dy = math.remainder(int(obj_y) - int(self.ship_y), SCREEN_HEIGHT)
 
         dist = math.sqrt(dx**2 + dy**2)
         abs_angle = math.atan2(dy, dx)
 
-        # Ship rotation: 0=up, increases counterclockwise, 16 steps per full circle.
+        # Ship rotation: 0=up, increases counterclockwise, ROT_STEPS per full circle.
         # atan2 frame: 0=right, π/2=down, -π/2=up.
-        # So ship "forward" in atan2 coords = -π/2 - rot*(2π/16)
-        ship_forward = -math.pi / 2 - self.ship_rot * (2 * math.pi / 16)
+        ship_forward = -math.pi / 2 - self.ship_rot * (2 * math.pi / ROT_STEPS)
         # Relative angle: 0 = directly ahead, positive = right, negative = left
         rel_angle = math.remainder(abs_angle - ship_forward, 2 * math.pi)
 
@@ -72,13 +58,11 @@ class AsteroidState:
         
         for idx in self.AST_SLOTS:
             raw_y = obs[idx]
-            raw_x = obs[idx + 18]  # X is 18 bytes after Y
+            raw_x = obs[idx + AST_X_OFFSET]
 
-            # Inactive slot: X is 0 or bit 7 of Y is set
-            if raw_x == 0 or (raw_y & 128):
+            if raw_x == 0 or (raw_y & INACTIVE_BIT):
                 continue
 
-            # Decode positions
             x = _x_position(raw_x)
             y = _y_position(raw_y)
 
@@ -90,9 +74,9 @@ class AsteroidState:
 
     def update(self, obs, reward, info):
 
-        self.ship_x = _x_position(obs[73])
-        self.ship_y = _y_position(obs[74]) if obs[74] != 224 else 0  # Ship Y (224 = dead)
-        self.ship_rot = obs[60] & 0x0F  # Lower 4 bits = direction
+        self.ship_x = _x_position(obs[RAM_SHIP_X])
+        self.ship_y = _y_position(obs[RAM_SHIP_Y]) if obs[RAM_SHIP_Y] != SHIP_DEAD_Y else 0
+        self.ship_rot = obs[RAM_SHIP_ROT] & ROT_MASK
 
         raw_list = self.process_slots(obs)
         self.asteroids = sorted(raw_list, key=lambda r: r[0])
@@ -102,25 +86,21 @@ class AsteroidState:
         self.lives = current_lives
         
         if self.is_dead:
-            self.custom_reward = -20
+            self.custom_reward = DEATH_PENALTY
         else:
-            # Scale positive rewards to a max of 1
-            self.custom_reward = min(1.0, reward) if reward > 0 else 0
+            self.custom_reward = min(MAX_REWARD, reward) if reward > 0 else 0
 
     def get_custom_obs(self):
-        """Returns [dist, angle] for the 8 closest rocks, normalized."""
+        """Returns [dist, angle] for the N_SENSORS closest rocks, normalized."""
         obs_list = []
-        for i in range(8):
+        for i in range(N_SENSORS):
             if i < len(self.asteroids):
                 dist, angle = self.asteroids[i]
-                # Normalize dist by max screen diagonal (~264), angle by pi
-                obs_list.extend([dist / 150.0, angle / math.pi])
+                obs_list.extend([dist / MAX_DIST_NORM, angle / math.pi])
             else:
-                # Padding for consistent neural network input
-                obs_list.extend([1.0, 1.0])
+                obs_list.extend([SENSOR_PAD_VALUE, SENSOR_PAD_VALUE])
         return np.array(obs_list, dtype=np.float32)
 
-        
     def __str__(self):
         rock_list = " ".join(f"[{d:3.0f}, {math.degrees(a):4.0f}°]" for d, a in self.asteroids)
         return (f"ROCKS: {len(self.asteroids):2} | "f"REWARD: {self.custom_reward:2} | \n"f"SENSORS: {rock_list}") 
