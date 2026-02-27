@@ -19,7 +19,7 @@ ROT_STEPS = 16        # Number of rotation steps in a full circle
 
 # ── Reward Shaping ──
 
-DEATH_PENALTY = -20
+DEATH_PENALTY = -3
 MAX_REWARD = 1.0
 STARTING_LIVES = 4
 
@@ -36,9 +36,9 @@ BATCH_SIZE = 128 # Number of transitions sampled from the replay buffer
 GAMMA = 0.99 # Discount factor of predicted future ations reward
 
 # Epsilon decay variable - Each action has epsilon time chance to be ignored and replaced by exploration action
-EPS_START = 0.7 
+EPS_START = 0.9
 EPS_END = 0.01
-EPS_DECAY = 2500 # Controls the rate of exponential decay of epsilon, higher means a slower decay
+EPS_DECAY = 25000 # Controls the rate of exponential decay of epsilon, higher means a slower decay
 
 TAU = 0.005 # Update rate of target network
 
