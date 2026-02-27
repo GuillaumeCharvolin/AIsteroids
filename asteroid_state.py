@@ -1,53 +1,126 @@
 import math
+import numpy as np
+
+# RAM layout (from OCAtari reverse-engineering):
+#   Asteroid Y raw:  ram[3]  .. ram[19]   (17 slots)
+#   Asteroid X raw:  ram[21] .. ram[37]   (Y index + 18)
+#   Asteroid size:   ram[39] .. ram[55]   (Y index + 36)
+#   Ship X raw:      ram[73]
+#   Ship Y raw:      ram[74]   (224 = dead)
+#   Ship rotation:   ram[60]   (lower 4 bits = direction)
+
+def _x_position(value):
+    """Decode the non-linear X position encoding used by Atari 2600 Asteroids.
+    Raw RAM byte -> screen pixel X coordinate (approx 0-160)."""
+    value = int(value)  # cast from numpy uint8 to avoid overflow
+    ls = value & 15
+    add = 8 * ((value >> 7) & 1)
+    sub = (value >> 4) & 7
+    if value == 0:
+        return 64
+    elif value == 1:
+        return 4
+    elif ls % 2 == 0:
+        mult = (ls / 2) - 1
+        return int(97 + 15 * mult + add - sub)
+    else:
+        mult = ((ls - 1) / 2) - 1
+        return int(10 + 15 * mult + add - sub)
+
+def _y_position(raw_y):
+    """Convert raw RAM Y value to screen pixel Y coordinate."""
+    return 184 - 2 * (80 - int(raw_y))  # cast from numpy uint8
+
 
 class AsteroidState:
+    # Asteroid slot indices (Y positions at ram[3..19])
+    AST_SLOTS = list(range(3, 20))  # 17 slots
+    NUM_SLOTS = len(AST_SLOTS)
+
     def __init__(self):
+        self.WIDTH = 160
+        self.HEIGHT = 210
+        
         self.ship_x = 0
         self.ship_y = 0
         self.ship_rot = 0
         self.asteroids = []
-        self.score = 0
-        self.lives = 0
+        self.lives = 4
         self.is_dead = False
+        self.custom_reward = 0
 
-        self.WIDTH = 160
-        self.HEIGHT = 210
+    def _get_polar_coords(self, obj_x, obj_y):
+        # Calculate relative distance with screen wrap-around logic
+        dx = math.remainder(int(obj_x) - int(self.ship_x), self.WIDTH)
+        dy = math.remainder(int(obj_y) - int(self.ship_y), self.HEIGHT)
 
-    def _get_relative_coords(self, obj_x, obj_y):
-        dx = math.remainder(obj_x - self.ship_x, self.WIDTH)
-        dy = math.remainder(obj_y - self.ship_y, self.HEIGHT)
+        dist = math.sqrt(dx**2 + dy**2)
+        abs_angle = math.atan2(dy, dx)
+
+        # Ship rotation: 0=up, increases counterclockwise, 16 steps per full circle.
+        # atan2 frame: 0=right, π/2=down, -π/2=up.
+        # So ship "forward" in atan2 coords = -π/2 - rot*(2π/16)
+        ship_forward = -math.pi / 2 - self.ship_rot * (2 * math.pi / 16)
+        # Relative angle: 0 = directly ahead, positive = right, negative = left
+        rel_angle = math.remainder(abs_angle - ship_forward, 2 * math.pi)
+
+        return dist, rel_angle
+
+    def process_slots(self, obs):
+        raw_polar_list = []
+        seen_xy = []
         
-        return int(dx), int(dy)
+        for idx in self.AST_SLOTS:
+            raw_y = obs[idx]
+            raw_x = obs[idx + 18]  # X is 18 bytes after Y
 
-    def update(self, obs):
-        """Update with a full-sweep of Atari object memory."""
-        self.ship_x = obs[73]
-        self.ship_y = obs[74]
-        self.ship_rot = obs[60]
-        
-        raw_list = []
-        
-        # 1. Sweep Primary Slots (3-17)
-        for i in range(15):
-            x, y = obs[3 + i], obs[12 + i]
-            # Ignore 0,0 (empty) and the ship's own position
-            if (x != 0 or y != 0) and not (x == self.ship_x and y == self.ship_y):
-                dx, dy = self._get_relative_coords(x, y)
-                raw_list.append({'dx': dx, 'dy': dy})
+            # Inactive slot: X is 0 or bit 7 of Y is set
+            if raw_x == 0 or (raw_y & 128):
+                continue
 
-        # 2. Sweep Debris Slots (30-34)
-        for i in range(5):
-            x, y = obs[30 + i], obs[35 + i]
-            if (x != 0 or y != 0):
-                dx, dy = self._get_relative_coords(x, y)
-                raw_list.append({'dx': dx, 'dy': dy})
-        
-        self.asteroids = raw_list
-        self.score = obs[102]
-        self.lives = obs[107]
-        self.is_dead = (obs[70] > 0)
+            # Decode positions
+            x = _x_position(raw_x)
+            y = _y_position(raw_y)
 
+            seen_xy.append((x, y))
+            dist, rel_angle = self._get_polar_coords(x, y)
+            raw_polar_list.append((dist, rel_angle))
+            
+        return raw_polar_list
+
+    def update(self, obs, reward, info):
+
+        self.ship_x = _x_position(obs[73])
+        self.ship_y = _y_position(obs[74]) if obs[74] != 224 else 0  # Ship Y (224 = dead)
+        self.ship_rot = obs[60] & 0x0F  # Lower 4 bits = direction
+
+        raw_list = self.process_slots(obs)
+        self.asteroids = sorted(raw_list, key=lambda r: r[0])
+
+        current_lives = info.get("lives", self.lives)
+        self.is_dead = current_lives < self.lives
+        self.lives = current_lives
+        
+        if self.is_dead:
+            self.custom_reward = -20
+        else:
+            # Scale positive rewards to a max of 1
+            self.custom_reward = min(1.0, reward) if reward > 0 else 0
+
+    def get_custom_obs(self):
+        """Returns [dist, angle] for the 8 closest rocks, normalized."""
+        obs_list = []
+        for i in range(8):
+            if i < len(self.asteroids):
+                dist, angle = self.asteroids[i]
+                # Normalize dist by max screen diagonal (~264), angle by pi
+                obs_list.extend([dist / 150.0, angle / math.pi])
+            else:
+                # Padding for consistent neural network input
+                obs_list.extend([1.0, 1.0])
+        return np.array(obs_list, dtype=np.float32)
+
+        
     def __str__(self):
-        res = f"SHIP: ({self.ship_x:3}, {self.ship_y:3}) | ROCKS: {len(self.asteroids):2} | SCORE: {self.score}\n"
-        rock_list = " ".join([f"[{r['dx']:3},{r['dy']:3}]" for r in self.asteroids])
-        return res + f"SENSORS: {rock_list}"
+        rock_list = " ".join(f"[{d:3.0f}, {math.degrees(a):4.0f}°]" for d, a in self.asteroids)
+        return (f"ROCKS: {len(self.asteroids):2} | "f"REWARD: {self.custom_reward:2} | \n"f"SENSORS: {rock_list}") 

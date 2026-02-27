@@ -14,17 +14,21 @@ def get_action():
         action = random.randint(1,4)
     return action
 
-env = gym.make("ALE/Asteroids-v5", obs_type="ram", render_mode="human")
+env = gym.make("AsteroidsNoFrameskip-v4", obs_type="ram", render_mode="human")
 obs, info = env.reset()
-
 state = AsteroidState()
 
 try:
     while True:
         action = get_action()
         obs, reward, terminated, truncated, info = env.step(action)
-        state.update(obs)
+        state.update(obs, reward, info)
+        
+        obs_custom = state.get_custom_obs()
+        reward_custom = state.custom_reward
+
         print(state)
+        #print(obs_custom)
 
         if terminated or truncated:
             obs, info = env.reset()
