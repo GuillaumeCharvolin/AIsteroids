@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
+import numpy as np
 from settings import *
 from collections import namedtuple, deque
 import random
@@ -34,13 +35,15 @@ class DQN(nn.Module):
         super(DQN, self).__init__()
         self.layer1 = nn.Linear(n_observations, NN_LAYER_SIZE)
         self.layer2 = nn.Linear(NN_LAYER_SIZE, NN_LAYER_SIZE)
-        self.layer3 = nn.Linear(NN_LAYER_SIZE, n_actions)
+        self.layer3 = nn.Linear(NN_LAYER_SIZE, NN_LAYER_SIZE)
+        self.layer4 = nn.Linear(NN_LAYER_SIZE, n_actions)
 
     # Called with either one element to determine next action, or a batch
     def forward(self, x):
         x = F.relu(self.layer1(x))
         x = F.relu(self.layer2(x))
-        return self.layer3(x)
+        x = F.relu(self.layer3(x))
+        return self.layer4(x)
 
 
 class Brain:
@@ -57,13 +60,15 @@ class Brain:
     def decay_exploration(self):
         self.eps_threshold = EPS_END + (EPS_START - EPS_END) * math.exp(-1. * self.action_taken_count / EPS_DECAY)
 
-    def select_action(self, obs):
+    def select_action(self, obs, explore=True):
         """Select action given observation (numpy array from get_custom_obs).
         Returns an int action for env.step()."""
         self.decay_exploration()
         self.action_taken_count += 1
 
-        if random.random() > self.eps_threshold:
+        epsilon_calculated = random.random() if explore else self.eps_threshold + 1
+
+        if epsilon_calculated > self.eps_threshold:
             with torch.no_grad():
                 # obs is a numpy array → convert to tensor, add batch dim [1, OBS_SIZE]
                 obs_tensor = torch.tensor(obs, dtype=torch.float32).unsqueeze(0)
@@ -75,6 +80,25 @@ class Brain:
         if action != 1:
             action = random.randint(1, 4)
         return action
+
+    def select_actions(self, obs_batch):
+        """Select actions for a batch of observations (numpy array [N, OBS_SIZE]).
+        Returns numpy array of int actions for env.step()."""
+        n = len(obs_batch)
+        self.decay_exploration()
+        self.action_taken_count += 1  # Count per batch, not per worker, to match original decay rate
+
+        if random.random() > self.eps_threshold:
+            with torch.no_grad():
+                obs_tensor = torch.tensor(obs_batch, dtype=torch.float32)
+                return self.policy_net(obs_tensor).max(1).indices.numpy() + 1
+
+        # Random exploration (biased toward fire)
+        actions = np.array([random.randint(1, 4) for _ in range(n)])
+        for i in range(n):
+            if actions[i] != 1:
+                actions[i] = random.randint(1, 4)
+        return actions
 
     def optimize_model(self):
         if len(self.memory) < BATCH_SIZE:

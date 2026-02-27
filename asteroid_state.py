@@ -98,7 +98,7 @@ class AsteroidState:
                 dist, angle = self.asteroids[i]
                 obs_list.extend([dist / MAX_DIST_NORM, angle / math.pi])
             else:
-                obs_list.extend([SENSOR_PAD_VALUE, SENSOR_PAD_VALUE])
+                obs_list.extend([SENSOR_PAD_DIST, SENSOR_PAD_ANGLE])
         return np.array(obs_list, dtype=np.float32)
 
     def __str__(self):

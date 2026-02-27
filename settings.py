@@ -27,25 +27,32 @@ STARTING_LIVES = 4
 
 N_SENSORS = 4            # Number of closest rocks tracked
 OBS_SIZE = N_SENSORS * 2 # [rocks distance, rocks polar] for every rocks      
-MAX_DIST_NORM = 150.0    # Normalization factor for distance
-SENSOR_PAD_VALUE = 1.0   # Padding for empty sensor slots
+MAX_DIST_NORM = 132.0    # Max toroidal distance: sqrt(80² + 105²)
+SENSOR_PAD_DIST = 1.0    # Empty sensor distance = far away
+SENSOR_PAD_ANGLE = -1.0  # Empty sensor angle = behind the ship (−π)
 
 # ── DQN Hyperparameters ──
 
-BATCH_SIZE = 128 # Number of transitions sampled from the replay buffer
+BATCH_SIZE = 256 # Number of transitions sampled from the replay buffer
 GAMMA = 0.99 # Discount factor of predicted future ations reward
 
 # Epsilon decay variable - Each action has epsilon time chance to be ignored and replaced by exploration action
-EPS_START = 0.9
+EPS_START = 0.3
 EPS_END = 0.01
-EPS_DECAY = 25000 # Controls the rate of exponential decay of epsilon, higher means a slower decay
+EPS_DECAY = 10000 # Controls the rate of exponential decay of epsilon, higher means a slower decay
 
 TAU = 0.005 # Update rate of target network
 
-LR = 3e-4
+LR = 0.001
 
 N_ACTIONS = 4 # Number of actions possible
 
 NN_LAYER_SIZE = 128
 
-MEMORY_SIZE = 10000
+MEMORY_SIZE = 30000
+
+# ── Parallelism ──
+
+NUM_WORKERS = 20          # Number of parallel Atari environments (≤ 32 cores)
+TORCH_THREADS = 8         # Threads for PyTorch CPU ops (leave cores for envs)
+OPTIMIZE_EVERY = 2        # Run optimize_model every N steps (amortize cost)
