@@ -1,3 +1,4 @@
 gymnasium[atari,accept-rom-license]
 ale-py
 shimmy>=2.0
+torch

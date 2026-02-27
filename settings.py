@@ -25,6 +25,27 @@ STARTING_LIVES = 4
 
 # ── Observation (Polar Sensors) ──
 
-N_SENSORS = 8            # Number of closest rocks tracked
+N_SENSORS = 4            # Number of closest rocks tracked
+OBS_SIZE = N_SENSORS * 2 # [rocks distance, rocks polar] for every rocks      
 MAX_DIST_NORM = 150.0    # Normalization factor for distance
 SENSOR_PAD_VALUE = 1.0   # Padding for empty sensor slots
+
+# ── DQN Hyperparameters ──
+
+BATCH_SIZE = 128 # Number of transitions sampled from the replay buffer
+GAMMA = 0.99 # Discount factor of predicted future ations reward
+
+# Epsilon decay variable - Each action has epsilon time chance to be ignored and replaced by exploration action
+EPS_START = 0.7 
+EPS_END = 0.01
+EPS_DECAY = 2500 # Controls the rate of exponential decay of epsilon, higher means a slower decay
+
+TAU = 0.005 # Update rate of target network
+
+LR = 3e-4
+
+N_ACTIONS = 4 # Number of actions possible
+
+NN_LAYER_SIZE = 128
+
+MEMORY_SIZE = 10000
